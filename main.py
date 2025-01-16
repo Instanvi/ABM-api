@@ -89,7 +89,7 @@ async def get_data(
     return {
         "data": documents,
         "page": page,
-        "limit": limit,
+        # "limit": limit,
         # "total_count": total_count,
         "total_pages": (total_count + limit - 1) // limit,  # Ceiling division for total pages
     }
