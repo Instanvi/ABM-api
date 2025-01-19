@@ -99,8 +99,8 @@ async def get_data(
 #TODO: implement pagination for all /search endpoints
 
 #Handle all events in the Comapanies collection
-@app.post("/company/add", tags=["Company"], description=" This endpoint is incharge of adding new companies")
-async def add_company(data: dict = Body(...), db: Database = Depends(get_database)):
+@app.post("/company/add", tags=["Company"], description=" This endpoint is incharge of adding new companies. They are added as a list(array) of dictionaries")
+async def add_company(data: list = Body([{}]), db: Database = Depends(get_database)):
     """
     Add a single or multiple company documents to the database.
     """
@@ -187,7 +187,7 @@ async def add_company(data: dict = Body(...), db: Database = Depends(get_databas
 
 
 @app.get("/company/search", tags=["Company"], description="Search a company by ID or name")
-async def search_company(id: str = Query(...), name: str = Query(None), db: Database = Depends(get_database)):
+async def search_company(id: str = Query(None), name: str = Query(None), db: Database = Depends(get_database)):
     """
     Search for a company by ID or name.
     """
@@ -215,8 +215,8 @@ async def search_company(id: str = Query(...), name: str = Query(None), db: Data
         return {"message": "Companies found by name", "data": companies}
 
 
-@app.delete("/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents")
-async def remove_company(ids: str = Body(...), db: Database = Depends(get_database)):
+@app.delete("/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents. The list(array) takes a string of ids")
+async def remove_company(ids: list = Body(...), db: Database = Depends(get_database)):
     try:
 
         if not isinstance(ids, list):  # Ensure data is always a list
@@ -368,7 +368,7 @@ async def update_company(
 #Handle all events in the Locations collection
 @app.get("/location/search", tags=["Location"], description="Search a location by ID, country, state, city")
 async def search_location(
-    id: str = Query(...), 
+    id: str = Query(None), 
     country: str = Query(None), 
     state: str = Query(None),
     city: str = Query(None),
@@ -447,8 +447,8 @@ async def update_location(
 
 
 #Handle all events in the Industries collection
-@app.post("/industry/add", tags=["Industry"], description="This endpoint is incharge of adding new idustries")
-async def add_industry(data: dict = Body(...), db: Database = Depends(get_database)):
+@app.post("/industry/add", tags=["Industry"], description="This endpoint is incharge of adding new idustries. They are added as a list(array) of json")
+async def add_industry(data: list = Body([{}]), db: Database = Depends(get_database)):
     """
     Add a single or multiple industry documents to the database.
     """
@@ -502,7 +502,7 @@ async def add_industry(data: dict = Body(...), db: Database = Depends(get_databa
 
 
 @app.get("/industry/search", tags=["Industry"], description="Search an industry by ID or name")
-async def search_industry(id: str = Query(...), name: str = Query(None), db: Database = Depends(get_database)):
+async def search_industry(id: str = Query(None), name: str = Query(None), db: Database = Depends(get_database)):
     """
     Search for a industry by ID or name.
     """
@@ -531,8 +531,8 @@ async def search_industry(id: str = Query(...), name: str = Query(None), db: Dat
 
 
 
-@app.delete("/industry/delete", tags=["Industry"], description="Removes 1 or multiple industries")
-async def remove_industry(ids: str = Body(...), db: Database = Depends(get_database)):
+@app.delete("/industry/delete", tags=["Industry"], description="Removes 1 or multiple industries. The list(array) takes a string of ids")
+async def remove_industry(ids: list = Body(...), db: Database = Depends(get_database)):
     try:
 
         if not isinstance(ids, list):  # Ensure data is always a list
