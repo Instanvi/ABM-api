@@ -44,7 +44,7 @@ def serialize_doc(doc):
         doc["_id"] = str(doc["_id"])
     return doc
 
-@app.get("/")
+@app.get("/", tags=["Extra"])
 async def get_data(
     collection: Optional[str] = Query("companies", description="The collection to query"),
     page: int = Query(1, ge=1, description="Page number (starts at 1)"),
@@ -99,7 +99,7 @@ async def get_data(
 #TODO: implement pagination for all /search endpoints
 
 #Handle all events in the Comapanies collection
-@app.post("/company/add", description=" This endpoint is incharge of adding new companies")
+@app.post("/company/add", tags=["Company"], description=" This endpoint is incharge of adding new companies")
 async def add_company(data: dict = Body(...), db: Database = Depends(get_database)):
     """
     Add a single or multiple company documents to the database.
@@ -186,7 +186,7 @@ async def add_company(data: dict = Body(...), db: Database = Depends(get_databas
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/company/search", description="Search a company by ID or name")
+@app.get("/company/search", tags=["Company"], description="Search a company by ID or name")
 async def search_company(id: str = Query(...), name: str = Query(None), db: Database = Depends(get_database)):
     """
     Search for a company by ID or name.
@@ -215,7 +215,7 @@ async def search_company(id: str = Query(...), name: str = Query(None), db: Data
         return {"message": "Companies found by name", "data": companies}
 
 
-@app.delete("/company/delete", description="Removes 1 or multiple Companies and their associated documents")
+@app.delete("/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents")
 async def remove_company(ids: str = Body(...), db: Database = Depends(get_database)):
     try:
 
@@ -286,7 +286,7 @@ async def remove_company(ids: str = Body(...), db: Database = Depends(get_databa
         raise HTTPException(status_code=400, detail=str(e))
     
 
-@app.put("/company/update", description="Update a company and related documents")
+@app.put("/company/update", tags=["Company"], description="Update a company and related documents")
 async def update_company(
     id: str = Query(..., description="ID of the company to update"),
     update_data: CompanyUpdate = None,
@@ -366,7 +366,7 @@ async def update_company(
 
 
 #Handle all events in the Locations collection
-@app.get("/location/search", description="Search a location by ID, country, state, city")
+@app.get("/location/search", tags=["Location"], description="Search a location by ID, country, state, city")
 async def search_location(
     id: str = Query(...), 
     country: str = Query(None), 
@@ -415,7 +415,7 @@ async def search_location(
         return {"message": "Locations found by city", "data": locations}
 
 
-@app.put("/location/update", description="Update a location and related documents")
+@app.put("/location/update", tags=["Location"], description="Update a location and related documents")
 async def update_location(
     id: str = Query(..., description="ID of the location to update"),
     update_data: LocationUpdate = None,
@@ -447,7 +447,7 @@ async def update_location(
 
 
 #Handle all events in the Industries collection
-@app.post("/industry/add", description=" This endpoint is incharge of adding new idustries")
+@app.post("/industry/add", tags=["Industry"], description="This endpoint is incharge of adding new idustries")
 async def add_industry(data: dict = Body(...), db: Database = Depends(get_database)):
     """
     Add a single or multiple industry documents to the database.
@@ -501,7 +501,7 @@ async def add_industry(data: dict = Body(...), db: Database = Depends(get_databa
 
 
 
-@app.get("/industry/search", description="Search an industry by ID or name")
+@app.get("/industry/search", tags=["Industry"], description="Search an industry by ID or name")
 async def search_industry(id: str = Query(...), name: str = Query(None), db: Database = Depends(get_database)):
     """
     Search for a industry by ID or name.
@@ -531,7 +531,7 @@ async def search_industry(id: str = Query(...), name: str = Query(None), db: Dat
 
 
 
-@app.delete("/industry/delete", description="Removes 1 or multiple industries")
+@app.delete("/industry/delete", tags=["Industry"], description="Removes 1 or multiple industries")
 async def remove_industry(ids: str = Body(...), db: Database = Depends(get_database)):
     try:
 
@@ -590,7 +590,7 @@ async def remove_industry(ids: str = Body(...), db: Database = Depends(get_datab
     
 
 
-@app.put("/industry/update", description="Update a industry and related documents")
+@app.put("/industry/update", tags=["Industry"], description="Update an industry")
 async def update_industry(
     id: str = Query(..., description="ID of the industry to update"),
     update_data: IndustryUpdate = None,
