@@ -4,7 +4,7 @@ from pymongo import MongoClient
 from pymongo.database import Database
 from dotenv import load_dotenv
 from bson import ObjectId
-from models import CompanyUpdate, LocationUpdate
+from models import CompanyUpdate, LocationUpdate, IndustryUpdate
 import os
 from database import DatabaseHandler
 
@@ -179,11 +179,12 @@ async def add_company(data: dict = Body(...), db: Database = Depends(get_databas
             return {
                 "message": "All Companies added successfully", 
                 "failed_results": errored_documents,
-                "companies": result.inserted_ids
+                "successful_results": result.inserted_ids
             }
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 @app.get("/company/search", description="Search a company by ID or name")
 async def search_company(id: str = Query(...), name: str = Query(None), db: Database = Depends(get_database)):
@@ -214,7 +215,7 @@ async def search_company(id: str = Query(...), name: str = Query(None), db: Data
         return {"message": "Companies found by name", "data": companies}
 
 
-@app.delete("/company/delete", description="Removes a Company and their associated documents")
+@app.delete("/company/delete", description="Removes 1 or multiple Companies and their associated documents")
 async def remove_company(ids: str = Body(...), db: Database = Depends(get_database)):
     try:
 
@@ -268,7 +269,7 @@ async def remove_company(ids: str = Body(...), db: Database = Depends(get_databa
                     "successful_count": 0
                 }
             else:
-                company_results = data_handler.delete_documents(db, ok_documents, "Companues", "multiple")
+                company_results = data_handler.delete_documents(db, ok_documents, "Companies", "multiple")
                 failed_count = len(ids) - company_results.deleted_count
                 return {
                     "message": "Documents were deleted.",
@@ -276,6 +277,9 @@ async def remove_company(ids: str = Body(...), db: Database = Depends(get_databa
                     "failed_count": failed_count,
                     "successful_count": company_results.deleted_count
                 }
+        
+        else:
+            raise HTTPException(status_code=400, detail="No ids were passed")
 
 
     except Exception as e:
@@ -359,16 +363,18 @@ async def update_company(
         raise HTTPException(status_code=400, detail=str(e))
     
 
-#Handle all events in the Location collection
+
+
+#Handle all events in the Locations collection
 @app.get("/location/search", description="Search a location by ID, country, state, city")
-async def search_company(
+async def search_location(
     id: str = Query(...), 
     country: str = Query(None), 
     state: str = Query(None),
     city: str = Query(None),
     db: Database = Depends(get_database)):
     """
-    Search for a company by ID or name.
+    Search for a location by ID or name.
     """
     if not id and not country and not state and not city:
         raise HTTPException(
@@ -409,20 +415,19 @@ async def search_company(
         return {"message": "Locations found by city", "data": locations}
 
 
-
 @app.put("/location/update", description="Update a location and related documents")
-async def update_company(
+async def update_location(
     id: str = Query(..., description="ID of the location to update"),
     update_data: LocationUpdate = None,
     db: Database = Depends(get_database)
 ):
     try:
-        # Find the existing company document
+        # Find the existing location document
         location = db["Locations"].find_one({"_id": ObjectId(id)})
         if not location:
             raise HTTPException(status_code=404, detail="Location not found")
 
-        # Update the company document
+        # Update the location document
         if "created_at" in update_data:
             update_data.pop("created_at")
         
@@ -435,6 +440,181 @@ async def update_company(
             raise HTTPException(status_code=404, detail="Location not found")
         
         return {"message": f"Location with ID {id} has been updated", "updated_fields": update_data}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+
+
+#Handle all events in the Industries collection
+@app.post("/industry/add", description=" This endpoint is incharge of adding new idustries")
+async def add_industry(data: dict = Body(...), db: Database = Depends(get_database)):
+    """
+    Add a single or multiple industry documents to the database.
+    """
+
+    try:
+        # Validate input
+        if not isinstance(data, list):  # Ensure data is always a list
+            data = [data]
+
+        industries = []
+        industry_required_fields = ("name")
+        errored_documents = []
+
+        for idx, industry in enumerate(data):
+            for field in industry_required_fields:
+                if field not in industry:
+                    errored_document = {
+                        "error": f"This document is missing `{field}`, required fields are {industry_required_fields}",
+                        "data": industry
+                    }
+                    errored_documents.append(errored_document)
+                    # poped_industry = data.pop(idx)
+                    # continue
+                else:
+                    industries.append(industry)
+        result = data_handler.add_documents(db, industries, "Industries", "multiple")
+
+        if len(errored_documents) > 0 and len(errored_documents) != len(result.inserted_ids):
+            return {
+                "message": "Some Industries were added successfully but others failed", 
+                "failed_results": errored_documents,
+                "successful_results": result.inserted_ids
+                }
+        
+        elif len(errored_documents) > 0 and len(errored_documents) == len(result.inserted_ids):
+            return {
+                "message": "No industries were added", 
+                "failed_results": errored_documents,
+                "successful_results": result.inserted_ids
+                }
+        else:
+            return {
+                "message": "All Industries added successfully", 
+                "failed_results": errored_documents,
+                "successful_results": result.inserted_ids
+            }
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+
+@app.get("/industry/search", description="Search an industry by ID or name")
+async def search_industry(id: str = Query(...), name: str = Query(None), db: Database = Depends(get_database)):
+    """
+    Search for a industry by ID or name.
+    """
+    if not id and not name:
+        raise HTTPException(
+            status_code=400, detail="You must provide either 'id' or 'name' to search."
+        )
+
+    if id:
+        try:
+            indsutry = db["Industries"].find_one({"_id": ObjectId(id)})
+            if not indsutry:
+                raise HTTPException(status_code=404, detail=f"Industry with the given ID {id} not found.")
+            indsutry["_id"] = str(indsutry["_id"])  # Convert ObjectId to string
+            return {"message": "Industry found by ID", "data": indsutry}
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid ID format.")
+
+    if name:
+        industries = list(db["Industries"].find({"name": {"$regex": name, "$options": "i"}}))
+        if not industries:
+            raise HTTPException(status_code=404, detail="No industries found with the given name.")
+        for industry in industries:
+            industry["_id"] = str(industry["_id"])  # Convert ObjectId to string
+        return {"message": "Industries found by name", "data": industries}
+
+
+
+@app.delete("/industry/delete", description="Removes 1 or multiple industries")
+async def remove_industry(ids: str = Body(...), db: Database = Depends(get_database)):
+    try:
+
+        if not isinstance(ids, list):  # Ensure data is always a list
+            ids = [ids]
+
+        if len(ids) == 1:
+            # Find the industry document by IDs
+            industry = db["Industries"].find_one({"_id": ObjectId(ids)})
+            if not industry:
+                raise HTTPException(status_code=404, detail="Industry not found")
+
+            # Delete the industry document
+            industry_result = data_handler.delete_documents(db, ids, "Industries", "single")
+            if industry_result.deleted_count == 0:
+                raise HTTPException(status_code=404, detail="Industry not found")
+
+            return {
+                "message": f"Industry with ID {ids} has been deleted"
+            }
+        elif len(ids) > 1:
+            errored_documents, ok_documents = [], []
+            for id in ids:
+                industry = db["Industries"].find_one({"_id": ObjectId(id)})
+                if not industry:
+                    errored_document = {
+                        "error": f"Industry not found",
+                        "data": id
+                    }
+                    errored_documents.append(errored_document)       
+                else:          
+                    ok_documents.append(id)
+
+            if len(errored_documents) == len(ids):
+                return {
+                    "message": "No documents were deleted.",
+                    "failed_results": errored_document,
+                    "failed_count": len(errored_documents),
+                    "successful_count": 0
+                }
+            else:
+                industry_results = data_handler.delete_documents(db, ok_documents, "Industries", "multiple")
+                failed_count = len(ids) - industry_results.deleted_count
+                return {
+                    "message": "Documents were deleted.",
+                    "failed_results": errored_document,
+                    "failed_count": failed_count,
+                    "successful_count": industry_results.deleted_count
+                }
+        else:
+            raise HTTPException(status_code=400, detail="No ids were passed")
+
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+
+
+@app.put("/industry/update", description="Update a industry and related documents")
+async def update_industry(
+    id: str = Query(..., description="ID of the industry to update"),
+    update_data: IndustryUpdate = None,
+    db: Database = Depends(get_database)
+):
+    try:
+        # Find the existing industry document
+        industry = db["Industries"].find_one({"_id": ObjectId(id)})
+        if not industry:
+            raise HTTPException(status_code=404, detail="industry not found")
+
+        # Update the industry document
+        if "created_at" in update_data:
+            update_data.pop("created_at")
+        
+        # Update existing industry document
+        industry_result = db["Industries"].update_one(
+            {"_id": ObjectId(id)},
+            {"$set": update_data},
+        )
+        if industry_result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Industry not found")
+        
+        return {"message": f"Industry with ID {id} has been updated", "updated_fields": update_data}
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

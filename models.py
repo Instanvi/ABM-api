@@ -18,3 +18,8 @@ class LocationUpdate(BaseModel):
     latitude: str = None
     longitude: str = None
     other_fields: str = None  # Additional fields to update in the location document
+
+
+class IndustryUpdate(BaseModel):
+    name: str = None
+    other_fields: str = None  # Additional fields to update in the industry document
