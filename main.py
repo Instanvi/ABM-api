@@ -1,24 +1,26 @@
-from fastapi import FastAPI, Query, HTTPException, Depends
+from fastapi import FastAPI, Query, HTTPException, Depends, Body
 from typing import Optional
 from pymongo import MongoClient
 from pymongo.database import Database
-from pydantic import BaseModel
 from dotenv import load_dotenv
 from bson import ObjectId
+from models import CompanyUpdate, LocationUpdate
 import os
+from database import DatabaseHandler
 
 
 load_dotenv()
 app = FastAPI()
-
 # MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME")
 
 client: MongoClient = None
+data_handler = DatabaseHandler(MONGO_URI, DB_NAME)
 
 def get_database() -> Database:
     return client[DB_NAME]
+
 
 @app.on_event("startup")
 async def startup_db_client():
@@ -93,3 +95,347 @@ async def get_data(
         # "total_count": total_count,
         "total_pages": (total_count + limit - 1) // limit,  # Ceiling division for total pages
     }
+
+#TODO: implement pagination for all /search endpoints
+
+#Handle all events in the Comapanies collection
+@app.post("/company/add", description=" This endpoint is incharge of adding new companies")
+async def add_company(data: dict = Body(...), db: Database = Depends(get_database)):
+    """
+    Add a single or multiple company documents to the database.
+    """
+    try:
+        # Validate input
+        if not isinstance(data, list):  # Ensure data is always a list
+            data = [data]
+
+        companies = []
+        company_required_fields = ("name", "industry", "location","revenue","size")
+        location_required_fields = ("country", "state", "city", "latitude", "longitude")
+        errored_documents = []
+
+        for idx, company in enumerate(data):
+            for field in company_required_fields:
+                if field not in company:
+                    errored_document = {
+                        "error": f"This document is missing `{field}`, required fields are {company_required_fields}",
+                        "data": company
+                    }
+                    errored_documents.append(errored_document)
+                    poped_company = data.pop(idx)
+                    continue
+                    
+            name = company.get("name")
+            industry_data = company.get("industry")
+            location_data = company.get("location")
+
+            for field in location_required_fields:
+                if field not in location_data:
+                    errored_document = {
+                        "error": f"The location of this document doesn't have `{field}`, required fields are {location_required_fields}",
+                        "data": company
+                    }
+                    errored_documents.append(errored_document)
+                    poped_data = data.pop(idx)
+                    continue
+
+
+            # if not name or not industry_data or not location_data:
+            #     raise HTTPException(status_code=400, detail="Missing required fields: 'name', 'industry', or 'location'.")
+
+            # Create or get the industry
+            industry_id = data_handler.get_or_create("Industries", industry_data)
+
+            # Create or get the location
+            location_id = data_handler.get_or_create("Locations", location_data)
+            
+
+            # Prepare company data
+            company_data = dict(company)
+            company_data["industry_id"] = location_id
+            company_data["industry_id"] = industry_id
+
+            poped_data = company_data.pop("industry")
+            poped_data = company_data.pop("location")
+
+            companies.append(company_data)
+
+        # Insert company document(s)
+        result = data_handler.add_documents(db, companies, "Companies", "multiple")
+
+        if len(errored_documents) > 0 and len(errored_documents) != len(result.inserted_ids):
+            return {
+                "message": "Some Companies were added successfully but others failed", 
+                "failed_results": errored_documents,
+                "successful_results": result.inserted_ids
+                }
+        elif len(errored_documents) > 0 and len(errored_documents) == len(result.inserted_ids):
+            return {
+                "message": "No companies were added", 
+                "failed_results": errored_documents,
+                "successful_results": result.inserted_ids
+                }
+        else:
+            return {
+                "message": "All Companies added successfully", 
+                "failed_results": errored_documents,
+                "companies": result.inserted_ids
+            }
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/company/search", description="Search a company by ID or name")
+async def search_company(id: str = Query(...), name: str = Query(None), db: Database = Depends(get_database)):
+    """
+    Search for a company by ID or name.
+    """
+    if not id and not name:
+        raise HTTPException(
+            status_code=400, detail="You must provide either 'id' or 'name' to search."
+        )
+
+    if id:
+        try:
+            company = db["Companies"].find_one({"_id": ObjectId(id)})
+            if not company:
+                raise HTTPException(status_code=404, detail=f"Company with the given ID {id} not found.")
+            company["_id"] = str(company["_id"])  # Convert ObjectId to string
+            return {"message": "Company found by ID", "data": company}
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid ID format.")
+
+    if name:
+        companies = list(db["Companies"].find({"name": {"$regex": name, "$options": "i"}}))
+        if not companies:
+            raise HTTPException(status_code=404, detail="No companies found with the given name.")
+        for company in companies:
+            company["_id"] = str(company["_id"])  # Convert ObjectId to string
+        return {"message": "Companies found by name", "data": companies}
+
+
+@app.delete("/company/delete", description="Removes a Company and their associated documents")
+async def remove_company(ids: str = Body(...), db: Database = Depends(get_database)):
+    try:
+
+        if not isinstance(ids, list):  # Ensure data is always a list
+            ids = [ids]
+
+        if len(ids) == 1:
+            # Find the company document by IDs
+            company = db["Companies"].find_one({"_id": ObjectId(ids)})
+            if not company:
+                raise HTTPException(status_code=404, detail="Company not found")
+
+            # Extract location_id from the company document
+            location_id = company.get("location_id")
+            if location_id:
+                # Delete the associated location document
+                location_result = data_handler.delete_documents(db, location_id, "Locations", "single")
+                if location_result.deleted_count == 0:
+                    # raise HTTPException(status_code=404, detail="Associated location not found")
+                    pass
+
+            # Delete the company document
+            company_result = data_handler.delete_documents(db, ids, "Companies", "single")
+            if company_result.deleted_count == 0:
+                raise HTTPException(status_code=404, detail="Company not found")
+
+            return {
+                "message": f"Company with ID {ids} and associated location with ID {location_id} have been deleted"
+            }
+        elif len(ids) > 1:
+            errored_documents, ok_documents = [], []
+            for id in ids:
+                company = db["Companies"].find_one({"_id": ObjectId(id)})
+                if not company:
+                    errored_document = {
+                        "error": f"Company not found",
+                        "data": id
+                    }
+                    errored_documents.append(errored_document)
+                else:
+                    location_id = company.get("location_id")
+                    if location_id:
+                        # Delete the associated location document
+                        location_result = data_handler.delete_documents(db, location_id, "Locations", "single")                  
+                    ok_documents.append(id)
+            if len(errored_documents) == len(ids):
+                return {
+                    "message": "No documents were deleted.",
+                    "failed_results": errored_document,
+                    "failed_count": len(errored_documents),
+                    "successful_count": 0
+                }
+            else:
+                company_results = data_handler.delete_documents(db, ok_documents, "Companues", "multiple")
+                failed_count = len(ids) - company_results.deleted_count
+                return {
+                    "message": "Documents were deleted.",
+                    "failed_results": errored_document,
+                    "failed_count": failed_count,
+                    "successful_count": company_results.deleted_count
+                }
+
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+
+@app.put("/company/update", description="Update a company and related documents")
+async def update_company(
+    id: str = Query(..., description="ID of the company to update"),
+    update_data: CompanyUpdate = None,
+    db: Database = Depends(get_database)
+):
+    try:
+        # Find the existing company document
+        company = db["Companies"].find_one({"_id": ObjectId(id)})
+        if not company:
+            raise HTTPException(status_code=404, detail="Company not found")
+
+        # Prepare the update payload for the company document
+        company_update = {}
+        if update_data.name:
+            company_update["name"] = update_data.name
+        if update_data.other_fields:
+            company_update.update(update_data.other_fields)
+
+        # Handle location updates
+        if update_data.location:
+
+            if "location_id" in company:
+                # Validate required fields for location
+                location_required_fields = ["country", "state", "city", "latitude", "longitude"]
+                missing_fields = [field for field in location_required_fields if field not in update_data.location or not update_data.location[field]]
+                if missing_fields:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Missing required fields in location: {', '.join(missing_fields)}"
+                    )
+
+                # Update existing location document
+                location_result = db["Locations"].update_one(
+                    {"_id": ObjectId(company["location_id"])},
+                    {"$set": update_data.location},
+                )
+                if location_result.matched_count == 0:
+                    raise HTTPException(status_code=404, detail="Associated location not found")
+            else:
+                # Insert a new location document
+                location_id = db["Locations"].insert_one(update_data.location).inserted_id
+                company_update["location_id"] = str(location_id)
+
+        # Handle industry updates
+        if update_data.industry:
+            if "industry_id" in company:
+                # Update existing industry document
+                industry_result = db["Industries"].update_one(
+                    {"_id": ObjectId(company["industry_id"])},
+                    {"$set": update_data.industry},
+                )
+                if industry_result.matched_count == 0:
+                    raise HTTPException(status_code=404, detail="Associated industry not found")
+            else:
+                # Insert a new industry document
+                industry_id = db["Industries"].insert_one(update_data.industry).inserted_id
+                company_update["industry_id"] = str(industry_id)
+
+        # Update the company document
+        if "created_at" in company_update:
+            company_update.pop("created_at")
+
+        if company_update:
+            company_result = db["Companies"].update_one(
+                {"_id": ObjectId(id)},
+                {"$set": company_update},
+            )
+            if company_result.matched_count == 0:
+                raise HTTPException(status_code=404, detail="Company not found")
+
+        return {"message": f"Company with ID {id} has been updated", "updated_fields": company_update}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+
+#Handle all events in the Location collection
+@app.get("/location/search", description="Search a location by ID, country, state, city")
+async def search_company(
+    id: str = Query(...), 
+    country: str = Query(None), 
+    state: str = Query(None),
+    city: str = Query(None),
+    db: Database = Depends(get_database)):
+    """
+    Search for a company by ID or name.
+    """
+    if not id and not country and not state and not city:
+        raise HTTPException(
+            status_code=400, detail="You must provide either 'id', 'country', 'state' or 'city' to search."
+        )
+
+    if id:
+        try:
+            location = db["Locations"].find_one({"_id": ObjectId(id)})
+            if not location:
+                raise HTTPException(status_code=404, detail=f"Lcoation with the given ID {id} not found.")
+            location["_id"] = str(location["_id"])  # Convert ObjectId to string
+            return {"message": "Location found by ID", "data": location}
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid ID format.")
+
+    if country:
+        locations = list(db["Locations"].find({"country": {"$regex": country, "$options": "i"}}))
+        if not locations:
+            raise HTTPException(status_code=404, detail="No locations found with the given country.")
+        for location in locations:
+            location["_id"] = str(location["_id"])  # Convert ObjectId to string
+        return {"message": "Locations found by country", "data": locations}
+    if state:
+        locations = list(db["Locations"].find({"state": {"$regex": state, "$options": "i"}}))
+        if not locations:
+            raise HTTPException(status_code=404, detail="No locations found with the given state.")
+        for location in locations:
+            location["_id"] = str(location["_id"])  # Convert ObjectId to string
+        return {"message": "Locations found by state", "data": locations}
+    
+    if city:
+        locations = list(db["Locations"].find({"city": {"$regex": city, "$options": "i"}}))
+        if not locations:
+            raise HTTPException(status_code=404, detail="No locations found with the given city.")
+        for location in locations:
+            location["_id"] = str(location["_id"])  # Convert ObjectId to string
+        return {"message": "Locations found by city", "data": locations}
+
+
+
+@app.put("/location/update", description="Update a location and related documents")
+async def update_company(
+    id: str = Query(..., description="ID of the location to update"),
+    update_data: LocationUpdate = None,
+    db: Database = Depends(get_database)
+):
+    try:
+        # Find the existing company document
+        location = db["Locations"].find_one({"_id": ObjectId(id)})
+        if not location:
+            raise HTTPException(status_code=404, detail="Location not found")
+
+        # Update the company document
+        if "created_at" in update_data:
+            update_data.pop("created_at")
+        
+        # Update existing location document
+        location_result = db["Locations"].update_one(
+            {"_id": ObjectId(id)},
+            {"$set": update_data},
+        )
+        if location_result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Location not found")
+        
+        return {"message": f"Location with ID {id} has been updated", "updated_fields": update_data}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
