@@ -1,5 +1,5 @@
 from pymongo.database import Database
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 import os
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -53,5 +53,20 @@ class DatabaseHandler:
             result = db[collection_name].delete_many(filter)
         else:
             raise Exception("Value of Qty type has to be either `single` or `multiple`")
+        
+        return result
+    
+    def perform_vote(db: Database, doc_id, vote, collection, issue=None):
+        col = db[collection]
+        if not isinstance(doc_id, str):  # Ensure doc_id is always a bson object
+            doc_id = ObjectId(doc_id)
+
+        if vote.lower() == "upvote":
+            result = col.update_one({"_id": doc_id}, {"$inc": {"upvotes": 1}})
+        elif vote.lower() == "downvote":
+            result = col.update_one({"_id": doc_id}, {"$inc": {"downvotes": 1}})
+            result = col.update_one({"_id": doc_id}, {"$push": {"issues": issue}})
+        else:
+            raise HTTPException(status_code=400, detail="Invalid vote type")
         
         return result

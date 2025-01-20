@@ -23,3 +23,5 @@ class LocationUpdate(BaseModel):
 class IndustryUpdate(BaseModel):
     name: str = None
     other_fields: str = None  # Additional fields to update in the industry document
+
+

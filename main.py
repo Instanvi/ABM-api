@@ -5,6 +5,8 @@ from pymongo.database import Database
 from dotenv import load_dotenv
 from bson import ObjectId
 from models import CompanyUpdate, LocationUpdate, IndustryUpdate
+from datetime import datetime, timezone
+
 import os
 from database import DatabaseHandler
 
@@ -619,3 +621,139 @@ async def update_industry(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     
+
+#Handle votes
+#collection can be either company, employee
+@app.get("/vote/details", tags=["Votes"], description="Get number of votes for a particular employee or company")
+async def get_votes(
+    id: str = Query(...),
+    collection: str = Query("Companies", description="The collection to query. Can be either `Companies` or `Employees`"),
+    db: Database = Depends(get_database),
+):
+    try:
+        collection = collection.capitalize()
+        if collection == "Companies":
+
+            company_col = db[collection]
+            company_doc = company_col.find_one({"_id": ObjectId(id)})
+            location_doc = db["Locations"].find_one({"_id": ObjectId(company_doc["location_id"])})
+            contact_doc = db["Contacts"].find_one({"_id": ObjectId(company_doc["contact_id"])})
+            industry_doc = db["Industries"].find_one({"_id": ObjectId(company_doc["industry_id"])})
+
+            data = {
+                "contact_votes": {
+                    "upvotes": contact_doc["upvotes"] if "upvotes" in contact_doc else 0,
+                    "downvotes": contact_doc["downvotes"] if "downvotes" in contact_doc else 0,
+                    "issues": contact_doc["issues"] if "issues" in contact_doc else {}
+                },
+                "company_info_votes": {
+                    "upvotes": company_doc["upvotes"] if "upvotes" in company_doc else 0,
+                    "downvotes": company_doc["downvotes"] if "downvotes" in company_doc else 0,
+                    "issues": company_doc["issues"] if "issues" in company_doc else {}
+                },
+                "location_votes": {
+                    "upvotes": location_doc["upvotes"] if "upvotes" in location_doc else 0,
+                    "downvotes": location_doc["downvotes"] if "downvotes" in location_doc else 0,
+                    "issues": location_doc["issues"] if "issues" in location_doc else {}
+                },
+                "industry_votes": {
+                    "upvotes": industry_doc["upvotes"] if "upvotes" in industry_doc else 0,
+                    "downvotes": industry_doc["downvotes"] if "downvotes" in industry_doc else 0,
+                    "issues": industry_doc["issues"] if "issues" in industry_doc else {}
+                }
+            }
+
+        elif collection == "Employees":
+            employee_col = db[collection]
+            employee_doc = employee_col.find_one({"_id": ObjectId(id)})
+            contact_doc = db["Contacts"].find_one({"_id": ObjectId(employee_doc["contact_id"])})
+
+            data = {
+                "contact_votes": {
+                    "upvotes": contact_doc["upvotes"] if "upvotes" in contact_doc else 0,
+                    "downvotes": contact_doc["downvotes"] if "downvotes" in contact_doc else 0,
+                    "issues": contact_doc["issues"] if "issues" in contact_doc else {}
+                },
+                "employee_info_votes": {
+                    "upvotes": employee_doc["upvotes"] if "upvotes" in employee_doc else 0,
+                    "downvotes": employee_doc["downvotes"] if "downvotes" in employee_doc else 0,
+                    "issues": employee_doc["issues"] if "issues" in employee_doc else {}
+                }
+            }
+
+        else:
+            raise HTTPException(status_code=400, detail="Invalid collection entered. Collection should eiher be `Companies` or `Employees` ")
+
+        return data
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/vote/add", tags=["Votes"], description="Collection can be either company, employee")
+async def vote_entity(
+    id: str = Query(...),
+    vote: str = Query(...),  # "upvote" or "downvote"
+    collection: str = Query("Companies", description="The collection to query. Can be either `Companies` or `Employees`"),
+    issue: Optional[dict] = Body({}, description="The issues reported by a user when down voting"),
+    db: Database = Depends(get_database),
+):
+    try:
+        collection = collection.capitalize()
+        if collection not in ["Companies", "Employees"]:
+            raise HTTPException(status_code=400, detail="Invalid collection name")
+        
+        if (vote.lower() == "downvote" and not isinstance(issue, dict)):
+            raise HTTPException(status_code=400, detail="Invalid datatype for issue. It has to be in a json format")
+        elif (vote.lower() == "downvote" and len(issue) == 0):
+            raise HTTPException(status_code=400, detail="Issue can not be empty")
+
+
+        # Validate issue
+        if "field" not in issue or "reason" not in issue or "suggestion" not in issue:
+            raise HTTPException(status_code=400, detail="Invalid issue format")
+        issue["created_at"] = datetime.now(timezone.utc)
+
+        contact_fields = ["phone", "email"]
+        location_fields = ["country", "state", "city", "latitude", "longitude"]
+
+        if collection == "Companies":
+            company_col = db["Companies"]
+            if str(issue["field"]).lower() in  contact_fields:
+                company_doc = company_col.find_one({"_id": ObjectId(id)})
+                # str(company_doc["_id"])
+                result = data_handler.perform_vote(db, company_doc["contact_id"], vote, "Contacts", issue)
+                
+            elif str(issue["field"]).lower() in  location_fields:
+
+                company_doc = company_col.find_one({"_id": ObjectId(id)})
+                # str(company_doc["_id"])
+                result = data_handler.perform_vote(db, company_doc["location_id"], vote, "Locations", issue)
+            
+            elif str(issue["field"]).lower() ==  "industry":
+
+                company_doc = company_col.find_one({"_id": ObjectId(id)})
+                result = data_handler.perform_vote(db, company_doc["industry_id"], vote, "Industries", issue)
+
+            else:
+                result = data_handler.perform_vote(db, id, vote, "Companies", issue)
+                      
+            if result.matched_count == 0:
+                raise HTTPException(status_code=404, detail="Document not found")
+        elif collection == "Employees":
+            employee_col = db["Employees"]
+
+            if str(issue["field"]).lower() in  contact_fields:
+                employee_doc = employee_col.find_one({"_id": ObjectId(id)})
+                result = data_handler.perform_vote(db, employee_doc["contact_id"], vote, "Contacts", issue)
+            else:
+                result = data_handler.perform_vote(db, id, vote, "Employees", issue)
+                
+            if result.matched_count == 0:
+                raise HTTPException(status_code=404, detail="Document not found")
+
+        return {"message": f"{vote.capitalize()} successful for document with id {id}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
