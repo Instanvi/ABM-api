@@ -281,7 +281,7 @@ async def search_company(id: str = Query(None), name: str = Query(None), db: Dat
 
 
 @app.delete("/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents. The list(array) takes a string of ids")
-async def remove_company(ids: list = Body(...), db: Database = Depends(get_database)):
+async def remove_company(ids: list = Body(..., description="ids field takes a list of string formatted ids"), db: Database = Depends(get_database)):
     try:
 
         if not isinstance(ids, list):  # Ensure data is always a list
@@ -538,7 +538,7 @@ async def update_location(
 
 #Handle all events in the Industries collection
 @app.post("/industry/add", tags=["Industry"], description="This endpoint is incharge of adding new idustries. They are added as a list(array) of json")
-async def add_industry(data: list = Body([{}]), db: Database = Depends(get_database)):
+async def add_industry(data: list = Body([{}], description="data field takes a list of json like objects"), db: Database = Depends(get_database)):
     """
     Add a single or multiple industry documents to the database.
     """
@@ -622,7 +622,7 @@ async def search_industry(id: str = Query(None), name: str = Query(None), db: Da
 
 
 @app.delete("/industry/delete", tags=["Industry"], description="Removes 1 or multiple industries. The list(array) takes a string of ids")
-async def remove_industry(ids: list = Body(...), db: Database = Depends(get_database)):
+async def remove_industry(ids: list = Body(..., description="ids field takes a list of string formatted IDs"), db: Database = Depends(get_database)):
     try:
 
         if not isinstance(ids, list):  # Ensure data is always a list
@@ -783,7 +783,7 @@ async def vote_entity(
     id: str = Query(...),
     vote: str = Query(...),  # "upvote" or "downvote"
     collection: str = Query("Companies", description="The collection to query. Can be either `Companies` or `Employees`"),
-    issue: Optional[dict] = Body({}, description="The issues reported by a user when down voting"),
+    issue: Optional[dict] = Body({}, description="The issue field takes issues reported by a user when down voting"),
     db: Database = Depends(get_database),
 ):
     try:
@@ -847,7 +847,7 @@ async def vote_entity(
 
 #Handle all events in the Employee collection
 @app.post("/employee/add", tags=["Employee"], description="This endpoint is incharge of adding new employees. They are added as a list(array) of json")
-async def add_employee(data: list = Body([{}]), db: Database = Depends(get_database)):
+async def add_employee(data: list = Body([{}], description="This data field takes a list of json like objects"), db: Database = Depends(get_database)):
     """
     Add a single or multiple company documents to the database.
     """
@@ -937,19 +937,20 @@ async def add_employee(data: list = Body([{}]), db: Database = Depends(get_datab
 
 
 
-@app.get("/employee/search", tags=["Employee"], description="Search an employee by ID, first_name, last_name, or job_title")
+@app.get("/employee/search", tags=["Employee"], description="Search an employee by ID, first_name, last_name, job_title or company id")
 async def search_employee(
     id: str = Query(None), 
     first_name: str = Query(None), 
     last_name: str = Query(None),
     job_title: str = Query(None),
+    company_id: str = Query(None),
     db: Database = Depends(get_database)
     ):
 
 
-    if not id and not first_name and not last_name and not job_title:
+    if not id and not first_name and not last_name and not job_title and not company_id:
         raise HTTPException(
-            status_code=400, detail="You must provide either 'id', 'first_name','last_name', or 'job_title' to search."
+            status_code=400, detail="You must provide either 'id', 'first_name','last_name', 'job_title' or 'company_id' to search."
         )
 
     if id:
@@ -1012,12 +1013,26 @@ async def search_employee(
 
             employee["contact"]= contact
         return {"message": "Employees found by Job title", "data": employees}
+    
+    if company_id:
+        employees = list(db["Employees"].find({"company_id": {"$regex": company_id, "$options": "i"}}))
+        if not employees:
+            raise HTTPException(status_code=404, detail="No employees found with the given company_id.")
+        for employee in employees:
+            employee["_id"] = str(employee["_id"])  # Convert ObjectId to string
+            contact = db["Contacts"].find_one({"_id": ObjectId(employee["contact_id"])})
+
+            contact.pop("created_at", None)
+            employee.pop("contact_id", None)
+
+            employee["contact"]= contact
+        return {"message": "Employees found by Job title", "data": employees}
 
 
 
 
 @app.delete("/employee/delete", tags=["Employee"], description="Removes 1 or multiple Employees. The list(array) takes a string of ids")
-async def remove_employee(ids: list = Body(...), db: Database = Depends(get_database)):
+async def remove_employee(ids: list = Body(..., description="The ids field takes a list of string formatted IDs"), db: Database = Depends(get_database)):
     try:
 
         if not isinstance(ids, list):  # Ensure data is always a list
