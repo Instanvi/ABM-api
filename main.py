@@ -98,7 +98,7 @@ async def get_data(
         "total_pages": (total_count + limit - 1) // limit,  # Ceiling division for total pages
     }
 
-#TODO: implement pagination for all /search endpoints
+#TODO: implement pagination for all /search endpoints, view update company for contacts
 
 #Handle all events in the Comapanies collection
 @app.post("/company/add", tags=["Company"], description=" This endpoint is incharge of adding new companies. They are added as a list(array) of dictionaries")
@@ -141,11 +141,40 @@ async def add_company(data: list = Body([{}]), db: Database = Depends(get_databa
                     poped_data = data.pop(idx)
                     continue
 
+            if ("contact" in company) and ("email" not in company["contact"] or "phone" not in company["contact"]):
+                errored_document = {
+                        "error": f"The Contact field has to have either `phone` or `email`",
+                        "data": company
+                }
+                errored_documents.append(errored_document)
+                poped_data = data.pop(idx)
+                continue
+
+            if ("contact" in company) and ("phone" in company["contact"] and not isinstance(company["contact"]["phone"], list)):
+                company["contact"]["phone"] = [str(company["contact"]["phone"])]
+
+            if ("contact" in company):
+                if "email" not in company["contact"]:
+                    company["contact"]["email"] = ""
+                elif "phone" not in company["contact"]:
+                    company["contact"]["phone"] = []
+                company["contact"]["upvotes"] = 0
+                company["contact"]["downvotes"] = 0
+                company["contact"]["issues"] = []
+                contact_id = data_handler.get_or_create("Contacts", company["contact"])
 
             # if not name or not industry_data or not location_data:
             #     raise HTTPException(status_code=400, detail="Missing required fields: 'name', 'industry', or 'location'.")
 
             # Create or get the industry
+            industry_data["upvotes"] = 0
+            industry_data["downvotes"] = 0
+            industry_data["issues"] = []
+
+            location_data["upvotes"] = 0
+            location_data["downvotes"] = 0
+            location_data["issues"] = []
+
             industry_id = data_handler.get_or_create("Industries", industry_data)
 
             # Create or get the location
@@ -156,9 +185,15 @@ async def add_company(data: list = Body([{}]), db: Database = Depends(get_databa
             company_data = dict(company)
             company_data["industry_id"] = location_id
             company_data["industry_id"] = industry_id
+            company_data["contact_id"] = contact_id
+
+            company_data["upvotes"] = 0
+            company_data["downvotes"] = 0
+            company_data["issues"] = []
 
             poped_data = company_data.pop("industry")
             poped_data = company_data.pop("location")
+            poped_data = company_data.pop("contact")
 
             companies.append(company_data)
 
@@ -204,6 +239,21 @@ async def search_company(id: str = Query(None), name: str = Query(None), db: Dat
             if not company:
                 raise HTTPException(status_code=404, detail=f"Company with the given ID {id} not found.")
             company["_id"] = str(company["_id"])  # Convert ObjectId to string
+
+            location = db["Locations"].find_one({"_id": ObjectId(company["location_id"])})
+            industry = db["Industries"].find_one({"_id": ObjectId(company["industry_id"])})
+            contact = db["Contacts"].find_one({"_id": ObjectId(company["contact_id"])})
+
+            location.pop("created_at", None)
+            industry.pop("created_at", None)
+            contact.pop("created_at", None)
+            company.pop("location_id", None)
+            company.pop("industry_id", None)
+            company.pop("contact_id", None)
+
+            company["contact"], company["location"], company["industry"] = contact, location, industry
+
+
             return {"message": "Company found by ID", "data": company}
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid ID format.")
@@ -214,6 +264,19 @@ async def search_company(id: str = Query(None), name: str = Query(None), db: Dat
             raise HTTPException(status_code=404, detail="No companies found with the given name.")
         for company in companies:
             company["_id"] = str(company["_id"])  # Convert ObjectId to string
+            location = db["Locations"].find_one({"_id": ObjectId(company["location_id"])})
+            industry = db["Industries"].find_one({"_id": ObjectId(company["industry_id"])})
+            contact = db["Contacts"].find_one({"_id": ObjectId(company["contact_id"])})
+
+            location.pop("created_at", None)
+            industry.pop("created_at", None)
+            contact.pop("created_at", None)
+            company.pop("location_id", None)
+            company.pop("industry_id", None)
+            company.pop("contact_id", None)
+
+            company["contact"], company["location"], company["industry"] = contact, location, industry
+
         return {"message": "Companies found by name", "data": companies}
 
 
@@ -331,6 +394,31 @@ async def update_company(
                 # Insert a new location document
                 location_id = db["Locations"].insert_one(update_data.location).inserted_id
                 company_update["location_id"] = str(location_id)
+
+        # Handle contact updates
+        if update_data.contact:
+
+            if "contact_id" in company:
+                # Validate required fields for contact
+                contact_required_fields = ["phone", "email"]
+                missing_fields = [field for field in contact_required_fields if field not in update_data.contact or not update_data.contact[field]]
+                if missing_fields:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Missing required fields in contact: {', '.join(missing_fields)}"
+                    )
+
+                # Update existing contact document
+                contact_result = db["Contacts"].update_one(
+                    {"_id": ObjectId(company["contact_id"])},
+                    {"$set": update_data.contact},
+                )
+                if contact_result.matched_count == 0:
+                    raise HTTPException(status_code=404, detail="Associated location not found")
+            else:
+                # Insert a new location document
+                contact_id = db["Contacts"].insert_one(update_data.contact).inserted_id
+                company_update["contact_id"] = str(contact_id)
 
         # Handle industry updates
         if update_data.industry:
@@ -757,3 +845,231 @@ async def vote_entity(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+#Handle all events in the Employee collection
+@app.post("/employee/add", tags=["Employee"], description="This endpoint is incharge of adding new employees. They are added as a list(array) of json")
+async def add_employee(data: list = Body([{}]), db: Database = Depends(get_database)):
+    """
+    Add a single or multiple company documents to the database.
+    """
+    try:
+        # Validate input
+        if not isinstance(data, list):  # Ensure data is always a list
+            data = [data]
+
+        employees = []
+        employee_required_fields = ("first_name", "last_name", "job_title", "contact")
+        errored_documents = []
+
+        for idx, employee in enumerate(data):
+            for field in employee_required_fields:
+                if field not in employee:
+                    errored_document = {
+                        "error": f"This document is missing `{field}`, required fields are {employee_required_fields}",
+                        "data": employee
+                    }
+                    errored_documents.append(errored_document)
+                    poped_employee = data.pop(idx)
+                    continue
+                    
+
+            if ("contact" in employee) and ("email" not in employee["contact"] or "phone" not in employee["contact"]):
+                errored_document = {
+                        "error": f"The Contact field has to have either `phone` or `email`",
+                        "data": employee
+                }
+                errored_documents.append(errored_document)
+                poped_data = data.pop(idx)
+                continue
+
+            if ("contact" in employee) and ("phone" in employee["contact"] and not isinstance(employee["contact"]["phone"], list)):
+                employee["contact"]["phone"] = [str(employee["contact"]["phone"])]
+
+            if ("contact" in employee):
+                if "email" not in employee["contact"]:
+                    employee["contact"]["email"] = ""
+                elif "phone" not in employee["contact"]:
+                    employee["contact"]["phone"] = []
+                employee["contact"]["upvotes"] = 0
+                employee["contact"]["downvotes"] = 0
+                employee["contact"]["issues"] = []
+                contact_id = data_handler.get_or_create("Contacts", employee["contact"])
+
+            # if not name or not industry_data or not location_data:
+            #     raise HTTPException(status_code=400, detail="Missing required fields: 'name', 'industry', or 'location'.")
+
+            
+
+            # Prepare employee data
+            employee_data = dict(employee)
+            employee_data["contact_id"] = contact_id
+
+            employee_data["upvotes"] = 0
+            employee_data["downvotes"] = 0
+            employee_data["issues"] = []
+            poped_data = employee_data.pop("contact")
+
+            employees.append(employee_data)
+
+        # Insert company document(s)
+        result = data_handler.add_documents(db, employees, "Employees", "multiple")
+
+        if len(errored_documents) > 0 and len(errored_documents) != len(result.inserted_ids):
+            return {
+                "message": "Some Companies were added successfully but others failed", 
+                "failed_results": errored_documents,
+                "successful_results": result.inserted_ids
+                }
+        elif len(errored_documents) > 0 and len(errored_documents) == len(result.inserted_ids):
+            return {
+                "message": "No companies were added", 
+                "failed_results": errored_documents,
+                "successful_results": result.inserted_ids
+                }
+        else:
+            return {
+                "message": "All Companies added successfully", 
+                "failed_results": errored_documents,
+                "successful_results": result.inserted_ids
+            }
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+
+@app.get("/employee/search", tags=["Employee"], description="Search an employee by ID, first_name, last_name, or job_title")
+async def search_employee(
+    id: str = Query(None), 
+    first_name: str = Query(None), 
+    last_name: str = Query(None),
+    job_title: str = Query(None),
+    db: Database = Depends(get_database)
+    ):
+
+
+    if not id and not first_name and not last_name and not job_title:
+        raise HTTPException(
+            status_code=400, detail="You must provide either 'id', 'first_name','last_name', or 'job_title' to search."
+        )
+
+    if id:
+        try:
+            employee = db["Employees"].find_one({"_id": ObjectId(id)})
+            if not employee:
+                raise HTTPException(status_code=404, detail=f"Industry with the given ID {id} not found.")
+            
+            employee["_id"] = str(employee["_id"])  # Convert ObjectId to string
+            contact = db["Contacts"].find_one({"_id": ObjectId(employee["contact_id"])})
+
+            contact.pop("created_at", None)
+            employee.pop("contact_id", None)
+
+            employee["contact"]= contact
+
+
+            return {"message": "Industry found by ID", "data": employee}
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid ID format.")
+
+    if first_name:
+        employees = list(db["Employees"].find({"first_name": {"$regex": first_name, "$options": "i"}}))
+        if not employees:
+            raise HTTPException(status_code=404, detail="No employees found with the given first_name.")
+        for employee in employees:
+            employee["_id"] = str(employee["_id"])  # Convert ObjectId to string
+            contact = db["Contacts"].find_one({"_id": ObjectId(employee["contact_id"])})
+
+            contact.pop("created_at", None)
+            employee.pop("contact_id", None)
+
+            employee["contact"]= contact
+        return {"message": "Employees found by First name", "data": employees}
+    
+    if last_name:
+        employees = list(db["Employees"].find({"last_name": {"$regex": last_name, "$options": "i"}}))
+        if not employees:
+            raise HTTPException(status_code=404, detail="No employees found with the given last_name.")
+        for employee in employees:
+            employee["_id"] = str(employee["_id"])  # Convert ObjectId to string
+            contact = db["Contacts"].find_one({"_id": ObjectId(employee["contact_id"])})
+
+            contact.pop("created_at", None)
+            employee.pop("contact_id", None)
+
+            employee["contact"]= contact
+        return {"message": "Employees found by Last name", "data": employees}
+    
+    if job_title:
+        employees = list(db["Employees"].find({"job_title": {"$regex": job_title, "$options": "i"}}))
+        if not employees:
+            raise HTTPException(status_code=404, detail="No employees found with the given job_title.")
+        for employee in employees:
+            employee["_id"] = str(employee["_id"])  # Convert ObjectId to string
+            contact = db["Contacts"].find_one({"_id": ObjectId(employee["contact_id"])})
+
+            contact.pop("created_at", None)
+            employee.pop("contact_id", None)
+
+            employee["contact"]= contact
+        return {"message": "Employees found by Job title", "data": employees}
+
+
+
+
+@app.delete("/employee/delete", tags=["Employee"], description="Removes 1 or multiple Employees. The list(array) takes a string of ids")
+async def remove_employee(ids: list = Body(...), db: Database = Depends(get_database)):
+    try:
+
+        if not isinstance(ids, list):  # Ensure data is always a list
+            ids = [ids]
+
+        if len(ids) == 1:
+            # Find the industry document by IDs
+            employee = db["Employees"].find_one({"_id": ObjectId(ids)})
+            if not employee:
+                raise HTTPException(status_code=404, detail="Employee not found")
+
+            # Delete the employee document
+            employee_result = data_handler.delete_documents(db, ids, "Employees", "single")
+            if employee_result.deleted_count == 0:
+                raise HTTPException(status_code=404, detail="Employee not found")
+
+            return {
+                "message": f"Employee with ID {ids} has been deleted"
+            }
+        elif len(ids) > 1:
+            errored_documents, ok_documents = [], []
+            for id in ids:
+                industry = db["Employees"].find_one({"_id": ObjectId(id)})
+                if not industry:
+                    errored_document = {
+                        "error": f"Employee not found",
+                        "data": id
+                    }
+                    errored_documents.append(errored_document)       
+                else:          
+                    ok_documents.append(id)
+
+            if len(errored_documents) == len(ids):
+                return {
+                    "message": "No documents were deleted.",
+                    "failed_results": errored_document,
+                    "failed_count": len(errored_documents),
+                    "successful_count": 0
+                }
+            else:
+                industry_results = data_handler.delete_documents(db, ok_documents, "Employees", "multiple")
+                failed_count = len(ids) - industry_results.deleted_count
+                return {
+                    "message": "Documents were deleted.",
+                    "failed_results": errored_document,
+                    "failed_count": failed_count,
+                    "successful_count": industry_results.deleted_count
+                }
+        else:
+            raise HTTPException(status_code=400, detail="No ids were passed")
+
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+ 

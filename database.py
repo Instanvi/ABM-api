@@ -23,6 +23,10 @@ class DatabaseHandler:
         existing = collection.find_one(data)
         if existing:
             return existing["_id"]  # Return existing document's ID
+        
+        if "created_at" not in data:
+            data["created_at"] = datetime.now(timezone.utc)
+
         result = collection.insert_one(data)
         return result.inserted_id  # Return new document's ID
     
@@ -31,11 +35,13 @@ class DatabaseHandler:
             db.create_collection(collection_name)
 
         if str(qty_type).lower() == "single":
-            documents["created_at"] = datetime.now(timezone.utc)
+            if "created_at" not in documents:
+                documents["created_at"] = datetime.now(timezone.utc)
             result = db[collection_name].insert_one(documents)
         elif str(qty_type).lower() == "multiple":
             for document in documents:
-                document["created_at"] = datetime.now(timezone.utc)
+                if "created_at" not in documents:
+                    document["created_at"] = datetime.now(timezone.utc)
             result = db[collection_name].insert_many(documents)
         else:
             raise Exception("Value of Qty type has to be either `single` or `multiple`")

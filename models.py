@@ -7,6 +7,7 @@ class CompanyUpdate(BaseModel):
     size: str = None
     revenue: str = None
     location: dict = None
+    contact: dict = None
     industry: str = None
     other_fields: dict = None  # Additional fields to update in the company document
 
