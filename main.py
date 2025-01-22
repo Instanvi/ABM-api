@@ -46,7 +46,7 @@ def serialize_doc(doc):
         doc["_id"] = str(doc["_id"])
     return doc
 
-@app.get("/", tags=["Extra"])
+@app.get("/supplier", tags=["Default"])
 async def get_data(
     collection: Optional[str] = Query("companies", description="The collection to query"),
     page: int = Query(1, ge=1, description="Page number (starts at 1)"),
@@ -101,7 +101,7 @@ async def get_data(
 #TODO: implement pagination for all /search endpoints, view update company for contacts
 
 #Handle all events in the Comapanies collection
-@app.post("/company/add", tags=["Company"], description=" This endpoint is incharge of adding new companies. They are added as a list(array) of dictionaries")
+@app.post("/supplier/company/add", tags=["Company"], description=" This endpoint is incharge of adding new companies. They are added as a list(array) of dictionaries")
 async def add_company(data: list = Body([{}]), db: Database = Depends(get_database)):
     """
     Add a single or multiple company documents to the database.
@@ -223,7 +223,7 @@ async def add_company(data: list = Body([{}]), db: Database = Depends(get_databa
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/company/search", tags=["Company"], description="Search a company by ID or name")
+@app.get("/supplier/company/search", tags=["Company"], description="Search a company by ID or name")
 async def search_company(id: str = Query(None), name: str = Query(None), db: Database = Depends(get_database)):
     """
     Search for a company by ID or name.
@@ -280,7 +280,7 @@ async def search_company(id: str = Query(None), name: str = Query(None), db: Dat
         return {"message": "Companies found by name", "data": companies}
 
 
-@app.delete("/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents. The list(array) takes a string of ids")
+@app.delete("/supplier/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents. The list(array) takes a string of ids")
 async def remove_company(ids: list = Body(..., description="ids field takes a list of string formatted ids"), db: Database = Depends(get_database)):
     try:
 
@@ -351,7 +351,7 @@ async def remove_company(ids: list = Body(..., description="ids field takes a li
         raise HTTPException(status_code=400, detail=str(e))
     
 
-@app.put("/company/update", tags=["Company"], description="Update a company and related documents")
+@app.put("/supplier/company/update", tags=["Company"], description="Update a company and related documents")
 async def update_company(
     id: str = Query(..., description="ID of the company to update"),
     update_data: CompanyUpdate = None,
@@ -456,7 +456,7 @@ async def update_company(
 
 
 #Handle all events in the Locations collection
-@app.get("/location/search", tags=["Location"], description="Search a location by ID, country, state, city")
+@app.get("/supplier/location/search", tags=["Location"], description="Search a location by ID, country, state, city")
 async def search_location(
     id: str = Query(None), 
     country: str = Query(None), 
@@ -505,7 +505,7 @@ async def search_location(
         return {"message": "Locations found by city", "data": locations}
 
 
-@app.put("/location/update", tags=["Location"], description="Update a location and related documents")
+@app.put("/supplier/location/update", tags=["Location"], description="Update a location and related documents")
 async def update_location(
     id: str = Query(..., description="ID of the location to update"),
     update_data: LocationUpdate = None,
@@ -537,7 +537,7 @@ async def update_location(
 
 
 #Handle all events in the Industries collection
-@app.post("/industry/add", tags=["Industry"], description="This endpoint is incharge of adding new idustries. They are added as a list(array) of json")
+@app.post("/supplier/industry/add", tags=["Industry"], description="This endpoint is incharge of adding new idustries. They are added as a list(array) of json")
 async def add_industry(data: list = Body([{}], description="data field takes a list of json like objects"), db: Database = Depends(get_database)):
     """
     Add a single or multiple industry documents to the database.
@@ -591,7 +591,7 @@ async def add_industry(data: list = Body([{}], description="data field takes a l
 
 
 
-@app.get("/industry/search", tags=["Industry"], description="Search an industry by ID or name")
+@app.get("/supplier/industry/search", tags=["Industry"], description="Search an industry by ID or name")
 async def search_industry(id: str = Query(None), name: str = Query(None), db: Database = Depends(get_database)):
     """
     Search for a industry by ID or name.
@@ -621,7 +621,7 @@ async def search_industry(id: str = Query(None), name: str = Query(None), db: Da
 
 
 
-@app.delete("/industry/delete", tags=["Industry"], description="Removes 1 or multiple industries. The list(array) takes a string of ids")
+@app.delete("/supplier/industry/delete", tags=["Industry"], description="Removes 1 or multiple industries. The list(array) takes a string of ids")
 async def remove_industry(ids: list = Body(..., description="ids field takes a list of string formatted IDs"), db: Database = Depends(get_database)):
     try:
 
@@ -680,7 +680,7 @@ async def remove_industry(ids: list = Body(..., description="ids field takes a l
     
 
 
-@app.put("/industry/update", tags=["Industry"], description="Update an industry")
+@app.put("/supplier/industry/update", tags=["Industry"], description="Update an industry")
 async def update_industry(
     id: str = Query(..., description="ID of the industry to update"),
     update_data: IndustryUpdate = None,
@@ -712,7 +712,7 @@ async def update_industry(
 
 #Handle votes
 #collection can be either company, employee
-@app.get("/vote/details", tags=["Votes"], description="Get number of votes for a particular employee or company")
+@app.get("/supplier/vote/details", tags=["Votes"], description="Get number of votes for a particular employee or company")
 async def get_votes(
     id: str = Query(...),
     collection: str = Query("Companies", description="The collection to query. Can be either `Companies` or `Employees`"),
@@ -778,7 +778,7 @@ async def get_votes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/vote/add", tags=["Votes"], description="Collection can be either company, employee")
+@app.post("/supplier/vote/add", tags=["Votes"], description="Collection can be either company, employee")
 async def vote_entity(
     id: str = Query(...),
     vote: str = Query(...),  # "upvote" or "downvote"
@@ -846,7 +846,7 @@ async def vote_entity(
 
 
 #Handle all events in the Employee collection
-@app.post("/employee/add", tags=["Employee"], description="This endpoint is incharge of adding new employees. They are added as a list(array) of json")
+@app.post("/supplier/employee/add", tags=["Employee"], description="This endpoint is incharge of adding new employees. They are added as a list(array) of json")
 async def add_employee(data: list = Body([{}], description="This data field takes a list of json like objects"), db: Database = Depends(get_database)):
     """
     Add a single or multiple company documents to the database.
@@ -1031,7 +1031,7 @@ async def search_employee(
 
 
 
-@app.delete("/employee/delete", tags=["Employee"], description="Removes 1 or multiple Employees. The list(array) takes a string of ids")
+@app.delete("/supplier/employee/delete", tags=["Employee"], description="Removes 1 or multiple Employees. The list(array) takes a string of ids")
 async def remove_employee(ids: list = Body(..., description="The ids field takes a list of string formatted IDs"), db: Database = Depends(get_database)):
     try:
 
