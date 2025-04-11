@@ -274,7 +274,7 @@ async def search_company(
             return {"message": "Company found by ID", "data": company}
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid ID format.")
-
+    """
     if name:
         # companies = list(db["Analyses_data"].find({"name": {"$regex": name, "$options": "i"}}))
         '''
@@ -312,7 +312,30 @@ async def search_company(
         cursor = db["Analyses_data"].find({"industry": {"$regex": industry, "$options": "i"}}).skip(skip).limit(limit)
         companies = [serialize_doc(doc) for doc in cursor]
         return {"message": "Companies found by industry", "data": companies}
+    """
     
+    query = {}
+
+    if name:
+        query["name"] = {"$regex": name, "$options": "i"}
+
+    if city:
+        query["city"] = {"$regex": city, "$options": "i"}
+
+    if industry:
+        query["industry"] = {"$regex": industry, "$options": "i"}
+
+    # Calculate skip value for pagination
+    skip = (page - 1) * limit
+
+    # Fetch the companies from the database using the composite query
+    cursor = db["Analyses_data"].find(query).skip(skip).limit(limit)
+    companies = [serialize_doc(doc) for doc in cursor]
+
+    if not companies:
+        raise HTTPException(status_code=404, detail="No companies found with the given filters.")
+
+    return {"message": "Companies found", "data": companies}
 @app.delete("/supplier/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents. The list(array) takes a string of ids")
 async def remove_company(ids: list = Body(..., description="ids field takes a list of string formatted ids"), db: Database = Depends(get_database)):
     try:
