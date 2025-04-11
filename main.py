@@ -234,7 +234,7 @@ async def add_company(data: list = Body([{}]), db: Database = Depends(get_databa
 
 
 @app.get("/supplier/company/search", tags=["Company"], description="Search a company by ID or name or city")
-async def search_company(id: str = Query(None), name: str = Query(None), city: str = Query(None), db: Database = Depends(get_database)):
+async def search_company(id: str = Query(None), name: str = Query(None), city: str = Query(None), industry: str = Query(None), db: Database = Depends(get_database)):
     """
     Search for a company by ID or name or city.
     """
@@ -296,6 +296,9 @@ async def search_company(id: str = Query(None), name: str = Query(None), city: s
     if city:
         companies = list(db["Analyses_data"].find({"name": {"$regex": name, "$options": "i"}}))
         return {"message": "Companies found by city", "data": companies}
+    if industry:
+        companies = list(db["Analyses_data"].find({"name": {"$regex": name, "$options": "i"}}))
+        return {"message": "Companies found by industry", "data": companies}
     
 @app.delete("/supplier/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents. The list(array) takes a string of ids")
 async def remove_company(ids: list = Body(..., description="ids field takes a list of string formatted ids"), db: Database = Depends(get_database)):
@@ -554,7 +557,7 @@ async def update_location(
 
 
 #Handle all events in the Industries collection
-@app.post("/supplier/industry", tags=["Industry"], description="This endpoint is Use to get a list of all industries")
+@app.get("/supplier/industry", tags=["Industry"], description="This endpoint is Use to get a list of all industries")
 async def all_industry(db: Database = Depends(get_database)):
     cursor = db['Industries'].find()
     documents = [serialize_doc(doc) for doc in cursor]
