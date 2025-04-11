@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from bson import ObjectId
 from models import CompanyUpdate, LocationUpdate, IndustryUpdate
 from datetime import datetime, timezone
+from fastapi.middleware.cors import CORSMiddleware
 
 import os
 from database import DatabaseHandler
@@ -13,6 +14,15 @@ from database import DatabaseHandler
 
 load_dotenv()
 app = FastAPI()
+# Allow all origins (for development/testing)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
+
 # MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME")
