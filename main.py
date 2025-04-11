@@ -294,10 +294,10 @@ async def search_company(id: str = Query(None), name: str = Query(None), city: s
         return {"message": "Companies found by name", "data": companies}
 
     if city:
-        companies = list(db["Analyses_data"].find({"name": {"$regex": name, "$options": "i"}}))
+        companies = list(db["Analyses_data"].find({"city": {"$regex": city, "$options": "i"}}))
         return {"message": "Companies found by city", "data": companies}
     if industry:
-        companies = list(db["Analyses_data"].find({"name": {"$regex": name, "$options": "i"}}))
+        companies = list(db["Analyses_data"].find({"industry": {"$regex": industry, "$options": "i"}}))
         return {"message": "Companies found by industry", "data": companies}
     
 @app.delete("/supplier/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents. The list(array) takes a string of ids")
