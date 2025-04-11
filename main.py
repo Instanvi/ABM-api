@@ -233,18 +233,20 @@ async def add_company(data: list = Body([{}]), db: Database = Depends(get_databa
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/supplier/company/search", tags=["Company"], description="Search a company by ID or name")
-async def search_company(id: str = Query(None), name: str = Query(None), db: Database = Depends(get_database)):
+@app.get("/supplier/company/search", tags=["Company"], description="Search a company by ID or name or city")
+async def search_company(id: str = Query(None), name: str = Query(None), city: str = Query(None), db: Database = Depends(get_database)):
     """
-    Search for a company by ID or name.
+    Search for a company by ID or name or city.
     """
-    if not id and not name:
+    if not id and not name and not city:
         raise HTTPException(
             status_code=400, detail="You must provide either 'id' or 'name' to search."
         )
 
     if id:
         try:
+            company = db["Analyses_data"].find_one({"_id": ObjectId(id)})
+            '''
             company = db["Companies"].find_one({"_id": ObjectId(id)})
             if not company:
                 raise HTTPException(status_code=404, detail=f"Company with the given ID {id} not found.")
@@ -263,12 +265,14 @@ async def search_company(id: str = Query(None), name: str = Query(None), db: Dat
 
             company["contact"], company["location"], company["industry"] = contact, location, industry
 
-
+            '''
             return {"message": "Company found by ID", "data": company}
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid ID format.")
 
     if name:
+        companies = list(db["Analyses_data"].find({"name": {"$regex": name, "$options": "i"}}))
+        '''
         companies = list(db["Companies"].find({"name": {"$regex": name, "$options": "i"}}))
         if not companies:
             raise HTTPException(status_code=404, detail="No companies found with the given name.")
@@ -286,10 +290,13 @@ async def search_company(id: str = Query(None), name: str = Query(None), db: Dat
             company.pop("contact_id", None)
 
             company["contact"], company["location"], company["industry"] = contact, location, industry
-
+        '''
         return {"message": "Companies found by name", "data": companies}
 
-
+    if city:
+        companies = list(db["Analyses_data"].find({"name": {"$regex": name, "$options": "i"}}))
+        return {"message": "Companies found by city", "data": companies}
+    
 @app.delete("/supplier/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents. The list(array) takes a string of ids")
 async def remove_company(ids: list = Body(..., description="ids field takes a list of string formatted ids"), db: Database = Depends(get_database)):
     try:
@@ -547,6 +554,13 @@ async def update_location(
 
 
 #Handle all events in the Industries collection
+@app.post("/supplier/industry", tags=["Industry"], description="This endpoint is Use to get a list of all industries")
+async def all_industry(db: Database = Depends(get_database)):
+    cursor = db['Industries'].find()
+    documents = [serialize_doc(doc) for doc in cursor]
+    
+    return {"data": documents}
+    
 @app.post("/supplier/industry/add", tags=["Industry"], description="This endpoint is incharge of adding new idustries. They are added as a list(array) of json")
 async def add_industry(data: list = Body([{}], description="data field takes a list of json like objects"), db: Database = Depends(get_database)):
     """
