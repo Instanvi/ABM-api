@@ -234,7 +234,12 @@ async def add_company(data: list = Body([{}]), db: Database = Depends(get_databa
 
 
 @app.get("/supplier/company/search", tags=["Company"], description="Search a company by ID or name or city")
-async def search_company(id: str = Query(None), name: str = Query(None), city: str = Query(None), industry: str = Query(None), db: Database = Depends(get_database)):
+async def search_company(
+    id: str = Query(None), name: str = Query(None), city: str = Query(None), industry: str = Query(None), 
+    page: int = Query(1, ge=1, description="Page number (starts at 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of documents per page"),
+    db: Database = Depends(get_database)
+):
     """
     Search for a company by ID or name or city.
     """
@@ -271,7 +276,7 @@ async def search_company(id: str = Query(None), name: str = Query(None), city: s
             raise HTTPException(status_code=400, detail="Invalid ID format.")
 
     if name:
-        companies = list(db["Analyses_data"].find({"name": {"$regex": name, "$options": "i"}}))
+        # companies = list(db["Analyses_data"].find({"name": {"$regex": name, "$options": "i"}}))
         '''
         companies = list(db["Companies"].find({"name": {"$regex": name, "$options": "i"}}))
         if not companies:
@@ -291,13 +296,21 @@ async def search_company(id: str = Query(None), name: str = Query(None), city: s
 
             company["contact"], company["location"], company["industry"] = contact, location, industry
         '''
+        skip = (page - 1) * limit
+        cursor = db["Analyses_data"].find({"name": {"$regex": name, "$options": "i"}}).skip(skip).limit(limit)
+        companies = [serialize_doc(doc) for doc in cursor]
         return {"message": "Companies found by name", "data": companies}
 
     if city:
-        companies = list(db["Analyses_data"].find({"city": {"$regex": city, "$options": "i"}}))
+        # companies = list(db["Analyses_data"].find({"city": {"$regex": city, "$options": "i"}}))
+        skip = (page - 1) * limit
+        cursor = db["Analyses_data"].find({"city": {"$regex": city, "$options": "i"}}).skip(skip).limit(limit)
+        companies = [serialize_doc(doc) for doc in cursor]
         return {"message": "Companies found by city", "data": companies}
     if industry:
-        companies = list(db["Analyses_data"].find({"industry": {"$regex": industry, "$options": "i"}}))
+        skip = (page - 1) * limit
+        cursor = db["Analyses_data"].find({"industry": {"$regex": industry, "$options": "i"}}).skip(skip).limit(limit)
+        companies = [serialize_doc(doc) for doc in cursor]
         return {"message": "Companies found by industry", "data": companies}
     
 @app.delete("/supplier/company/delete", tags=["Company"], description="Removes 1 or multiple Companies and their associated documents. The list(array) takes a string of ids")
